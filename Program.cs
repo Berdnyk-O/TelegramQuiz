@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Configuration;
+using Telegram.Bot;
 
 var builder = new ConfigurationBuilder();
 builder.SetBasePath(Directory.GetCurrentDirectory())
@@ -6,6 +7,11 @@ builder.SetBasePath(Directory.GetCurrentDirectory())
 
 IConfiguration config = builder.Build();
 
-var batchSize = config["TelegramBotToken"];
+var token = config["TelegramBotToken"];
 
-Console.WriteLine($"Token:  {batchSize}");
+Console.WriteLine($"Token:  {token}");
+
+
+var bot = new TelegramBotClient(token);
+var me = await bot.GetMe();
+Console.WriteLine($"Hello, World! I am user {me.Id} and my name is {me.FirstName}.");
