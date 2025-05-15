@@ -1,8 +1,7 @@
-﻿using Microsoft.Extensions.Configuration;
-using Telegram.Bot;
-using Telegram.Bot.Types;
-using Telegram.Bot.Types.Enums;
-using Telegram.Bot.Types.ReplyMarkups;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using TelegramQuiz;
+using TelegramQuiz.Database;
 
 var builder = new ConfigurationBuilder();
 builder.SetBasePath(Directory.GetCurrentDirectory())
@@ -11,102 +10,68 @@ builder.SetBasePath(Directory.GetCurrentDirectory())
 IConfiguration config = builder.Build();
 
 var token = config["TelegramBotToken"];
+var connectionString = config["ConnectionStrings:DefaultConnection"];
 
-Console.WriteLine($"Token:  {token}");
+var options = new DbContextOptionsBuilder<QuizDbContext>()
+            .UseNpgsql(connectionString)
+            .Options;
 
-using var cts = new CancellationTokenSource();
-var bot = new TelegramBotClient(token, cancellationToken: cts.Token);
+QuizDbContext quizDbContext = new QuizDbContext(options);
 
-var me = await bot.GetMe();
+FileWriter fileWriter = new FileWriter("/Answers", "UserAnswers", ".txt");
+Statistics statistics = new Statistics(0, 0, fileWriter);
+QuestionData questionData = new QuestionData();
 
-bot.OnMessage += OnMessage;
-bot.OnUpdate += OnUpdate;
+TelegramClient client = new TelegramClient(token);
+Engine engine = new Engine(questionData,
+    client,
+    fileWriter,
+    statistics);
 
 while (Console.ReadKey(true).Key != ConsoleKey.Escape) ;
-cts.Cancel();
+    Environment.Exit(0);
 
-async Task OnMessage(Message msg, UpdateType type)
-{
-    if (msg.Text is not { } text)
-        Console.WriteLine($"Received a message of type {msg.Type}");
-    else if (text.StartsWith('/'))
+/*IHost host = Host.CreateDefaultBuilder(args)
+    .ConfigureServices((context, services) =>
     {
-        var space = text.IndexOf(' ');
-        if (space < 0) space = text.Length;
-        var command = text[..space].ToLower();
-        if (command.LastIndexOf('@') is > 0 and int at)
-            if (command[(at + 1)..].Equals(me.Username, StringComparison.OrdinalIgnoreCase))
-                command = command[..at];
-            else
-                return;
-        await OnCommand(command, text[space..].TrimStart(), msg);
-    }
-    else
-        await OnTextMessage(msg);
-}
+        services.AddScoped<FileWriter>(provider =>
+            new FileWriter("/Answers", "UserAnswers", ".txt"));
+        services.AddScoped<Statistics>(provider => new Statistics(0,0, provider.GetRequiredService<FileWriter>()));
+        services.AddScoped<QuestionData>();
+        services.AddDbContext<QuizDbContext>(options =>
+            options.UseNpgsql(context.Configuration.GetConnectionString("DefaultConnection")));
 
-async Task OnTextMessage(Message msg)
-{
-    Console.WriteLine($"Received text '{msg.Text}' in {msg.Chat}");
-    await OnCommand("/start", "", msg);
-}
+        services.AddHttpClient("telegram_bot_client").RemoveAllLoggers()
+                .AddTypedClient<ITelegramBotClient>((httpClient, sp) =>
+                {
+                    string token = context.Configuration.GetValue<string>("TelegramBotToken");
+                    TelegramBotClientOptions options = new(token);
+                    return new TelegramBotClient(options, httpClient);
+                });
 
-async Task OnCommand(string command, string args, Message msg)
+        services.AddScoped<TelegramClient>(provider => new TelegramClient(provider.GetRequiredService<ITelegramBotClient>()));
+
+        services.AddScoped<Engine>();
+    })
+    .Build();
+
+await host.RunAsync();*/
+
+
+/*public class QuizDbContextFactory : IDesignTimeDbContextFactory<QuizDbContext>
 {
-    Console.WriteLine($"Received command: {command} {args}");
-    switch (command)
+    public QuizDbContext CreateDbContext(string[] args)
     {
-        case "/start":
-            await bot.SendMessage(msg.Chat, """
-                <b><u>Bot menu</u></b>:
-                /inline_buttons - send inline buttons
-                /keyboard       - send keyboard buttons
-                /remove         - remove keyboard buttons
-                /poll           - send a poll
-                /reaction       - send a reaction
-                """, parseMode: ParseMode.Html, linkPreviewOptions: true,
-                replyMarkup: new ReplyKeyboardRemove());
-            break;
-        case "/inline_buttons":
-            await bot.SendMessage(msg.Chat, "Inline buttons:", replyMarkup: new InlineKeyboardButton[][] {
-                ["1.1", "1.2", "1.3"],
-                [("WithCallbackData", "CallbackData"), ("WithUrl", "https://github.com/TelegramBots/Telegram.Bot")]
-            });
-            break;
-        case "/keyboard":
-            await bot.SendMessage(msg.Chat, "Keyboard buttons:", replyMarkup: new string[][] { ["1.1", "1.2", "1.3"], ["2.1", "2.2"] });
-            break;
-        case "/remove":
-            await bot.SendMessage(msg.Chat, "Removing keyboard", replyMarkup: new ReplyKeyboardRemove());
-            break;
-        case "/poll":
-            await bot.SendPoll(msg.Chat, "Question", ["Option 0", "Option 1", "Option 2"], isAnonymous: false, allowsMultipleAnswers: true);
-            break;
-        case "/reaction":
-            await bot.SetMessageReaction(msg.Chat, msg.Id, ["❤"], false);
-            break;
+        IConfigurationRoot configuration = new ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory()) // важливо для dotnet ef
+            .AddJsonFile("appsettings.json")
+            .Build();
+
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+
+        var optionsBuilder = new DbContextOptionsBuilder<QuizDbContext>();
+        optionsBuilder.UseNpgsql(connectionString);
+
+        return new QuizDbContext(optionsBuilder.Options);
     }
-}
-
-async Task OnUpdate(Update update)
-{
-    switch (update)
-    {
-        case { CallbackQuery: { } callbackQuery }: await OnCallbackQuery(callbackQuery); break;
-        case { PollAnswer: { } pollAnswer }: await OnPollAnswer(pollAnswer); break;
-        default: Console.WriteLine($"Received unhandled update {update.Type}"); break;
-    }
-    ;
-}
-
-async Task OnCallbackQuery(CallbackQuery callbackQuery)
-{
-    await bot.AnswerCallbackQuery(callbackQuery.Id, $"You selected {callbackQuery.Data}");
-    await bot.SendMessage(callbackQuery.Message!.Chat, $"Received callback from inline button {callbackQuery.Data}");
-}
-
-async Task OnPollAnswer(PollAnswer pollAnswer)
-{
-    if (pollAnswer.User != null)
-        await bot.SendMessage(pollAnswer.User.Id, $"You voted for option(s) id [{string.Join(',', pollAnswer.OptionIds)}]");
-}
+}*/
