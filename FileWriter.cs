@@ -1,6 +1,6 @@
 ﻿namespace TelegramQuiz
 {
-    class FileWriter
+    public class FileWriter
     {
         public string AnswersDir { get; set; }
         public string FileName { get; set; }

@@ -1,6 +1,6 @@
 ﻿namespace TelegramQuiz
 {
-    class Quiz
+    public class Quiz
     {
         public string YmlDirPath { get; private set; } = "D:/Projects/TelegramQuiz/Yml/questions.yaml";
         public string AnswersDirPath { get; private set; } = "D:/Projects/TelegramQuiz/Json/questions.json";

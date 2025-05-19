@@ -1,71 +1,176 @@
-﻿namespace TelegramQuiz
+﻿using Microsoft.EntityFrameworkCore;
+using TelegramQuiz.Database;
+using TelegramQuiz.Database.Entities;
+
+namespace TelegramQuiz
 {
-    class Engine
+    public class Engine
     {
         public QuestionData QuestionData { get; private set; }
-        public TelegramClient TelegramClient { get; private set; }
         public DateTime CurrentTime { get => DateTime.Now; }
         public FileWriter FileWriter { get; private set; }
+        public QuizDbContext Context { get; private set; }
         public Statistics Statistics { get; private set; }
-        
+
+        public string UserName { get; set; }
+
         private int questionIndex = -1;
+        private bool isTest = false;
         private DateTime TestingStartTime;
 
+        public Func<long, string, string[], Func<long, string, Task>, Task>? SendQuestionAsync;
+        public Func<long, string, Task>? SendMessageAsync;
+
         public Engine(QuestionData questionData,
-            TelegramClient telegramClient,
             FileWriter fileWriter,
+            QuizDbContext context,
             Statistics statistics)
         {
             QuestionData = questionData;
-            TelegramClient = telegramClient;
             FileWriter = fileWriter;
+            Context = context;
             Statistics = statistics;
-
-            TelegramClient.OnQuizSelected += async () => await Run();
         }
 
-        public async Task Run()
+        public async Task Run(long chatId)
         {
-            questionIndex++;
+            if (isTest == false)
+            {
+                questionIndex = -1;
+            }
 
+            questionIndex++;
+            
             if (questionIndex < QuestionData.Questions.Count)
             {
-                if(questionIndex < 1) TestingStartTime = DateTime.Now;
-                await TelegramClient.SendQuestion(
+                isTest = true;
+                if (questionIndex < 1) TestingStartTime = DateTime.Now;
+                await SendQuestionAsync(chatId,
                     QuestionData.Questions[questionIndex].Body,
                     QuestionData.Questions[questionIndex].DisplayAnswers(),
                     CheckAsync);
             }
             else
             {
-                await TelegramClient.SendMessage($"Вітаю, ви пройшли Quiz");
-                await TelegramClient.SendMessage(Statistics.PrintReport());
+                await SendMessageAsync(chatId, $"Вітаю, ви пройшли Quiz");
+                await SendMessageAsync(chatId, Statistics.PrintReport());
 
-                FileWriter.FileName = TelegramClient.UserName;
+                FileWriter.FileName = UserName;
                 FileWriter.Write($"{TestingStartTime} - {Statistics.PrintReport()}\n");
 
+                if(!await Context.Users.AnyAsync(x => x.UserName == UserName))
+                {
+                    var user = new User
+                    {
+                        UserName = UserName,
+                    };
+
+                    await Context.Users.AddAsync(user);
+                    await Context.SaveChangesAsync();
+                }
+
+                var quizTest = new QuizTest
+                {
+                    Status = 1,
+                    CorrectAnswers = Statistics.CorrectAnswers,
+                    IncorrectAnswers = Statistics.IncorrectAnswers,
+                    Percent = (decimal)Statistics.Percent,
+                    CreatedAt = TestingStartTime.ToUniversalTime(),
+                    UpdatedAt = TestingStartTime.ToUniversalTime(),
+                    UserId = Context.Users.FirstOrDefault(x=>x.UserName == UserName).Id
+                };
+
+                await Context.Tests.AddAsync(quizTest);
+                await Context.SaveChangesAsync();
+
+                isTest = false;
                 questionIndex = -1;
                 Statistics.CorrectAnswers = 0;
                 Statistics.IncorrectAnswers = 0;
             }
         }
 
-        public async Task CheckAsync(string userAnswerLetter)
+        public async Task StopTest(long chatId)
+        {
+            isTest = false;
+
+            await SendMessageAsync(chatId, $"Quiz зупинено");
+            await SendMessageAsync(chatId, Statistics.PrintReport());
+
+            FileWriter.FileName = UserName;
+            FileWriter.Write($"{TestingStartTime} - {Statistics.PrintReport()}\n");
+
+            if (!await Context.Users.AnyAsync(x => x.UserName == UserName))
+            {
+                var user = new User
+                {
+                    UserName = UserName,
+                };
+
+                await Context.Users.AddAsync(user);
+                await Context.SaveChangesAsync();
+            }
+
+            var quizTest = new QuizTest
+            {
+                Status = 0, // 1 - пройдено повністю, 0 - зупинено вручну
+                CorrectAnswers = Statistics.CorrectAnswers,
+                IncorrectAnswers = Statistics.IncorrectAnswers,
+                Percent = (decimal)Statistics.Percent,
+                CreatedAt = TestingStartTime.ToUniversalTime(),
+                UpdatedAt = TestingStartTime.ToUniversalTime(),
+                UserId = Context.Users.FirstOrDefault(x => x.UserName == UserName).Id
+            };
+
+            await Context.Tests.AddAsync(quizTest);
+            await Context.SaveChangesAsync();
+
+            questionIndex = -1;
+            Statistics.CorrectAnswers = 0;
+            Statistics.IncorrectAnswers = 0;
+        }
+        public async Task CheckAsync(long chatId, string userAnswerLetter)
         {
             var userAnswer = QuestionData.Questions[questionIndex].FindAnswerByChar(userAnswerLetter);
             
             if (userAnswer == QuestionData.Questions[questionIndex].CorrectAnswer)
             {
-                await TelegramClient.SendMessage($"Вірно");
-                Statistics.CorrectAnswers++;
+                await SendMessageAsync(chatId, $"Вірно");
+                if (isTest)
+                    Statistics.CorrectAnswers++;
             }
             else
             {
-                await TelegramClient.SendMessage($"Помилка");
-                Statistics.IncorrectAnswers++;
+                await SendMessageAsync(chatId, $"Помилка");
+                if (isTest)
+                    Statistics.IncorrectAnswers++;
             }
 
-            await Run();
+            if (isTest)
+                await Run(chatId);
+        }
+
+        public async Task GetQuestion(long chatId, int index)
+        {
+            if (isTest)
+            {
+                await SendMessageAsync(chatId, $"Спочатку пройдіть тест");
+                return;
+            }
+
+            if (index >= 0 && index < QuestionData.Questions.Count)
+            {
+                questionIndex = index;
+                await SendQuestionAsync(chatId,
+                   QuestionData.Questions[questionIndex].Body,
+                   QuestionData.Questions[questionIndex].DisplayAnswers(),
+                   CheckAsync);
+            }
+            else
+            {
+                await SendMessageAsync(chatId, $"Немає питання під таким номером");
+            }
+            
         }
     }
 }

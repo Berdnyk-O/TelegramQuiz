@@ -1,9 +1,10 @@
 ﻿namespace TelegramQuiz
 {
-    class Statistics
+    public class Statistics
     {
         public int CorrectAnswers { get; set; }
         public int IncorrectAnswers { get; set; }
+        public float Percent { get; set; }
 
         public FileWriter FileWriter;
 
@@ -16,7 +17,8 @@
 
         public string PrintReport()
         {
-            return $"Correct Answers: {CorrectAnswers} Incorrect Answers: {IncorrectAnswers} percentage of correct answers: {((float)CorrectAnswers/(CorrectAnswers + IncorrectAnswers))*100} %";
+            Percent = ((float)CorrectAnswers / (CorrectAnswers + IncorrectAnswers)) * 100;
+            return $"Correct Answers: {CorrectAnswers} Incorrect Answers: {IncorrectAnswers} percentage of correct answers: {Percent} %";
         }
     }
 }

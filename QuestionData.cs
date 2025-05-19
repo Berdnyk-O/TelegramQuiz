@@ -3,7 +3,7 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace TelegramQuiz
 {
-    class QuestionData
+    public class QuestionData
     {
         private const string QuestionsYmlDirPath = "D:/Projects/TelegramQuiz/Yml/questions.yaml";
         private const string QuestionsJsonDirPath = "D:/Projects/TelegramQuiz/Json/questions.json";
