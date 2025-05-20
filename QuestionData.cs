@@ -12,6 +12,7 @@ namespace TelegramQuiz
         public List<Question> Questions { get; set; }
         public List<Thread> Threads { get; set; }
 
+        private readonly object _lock = new object();
         public QuestionData(Question[] questions)
         {
             Questions = questions.ToList();
@@ -98,15 +99,18 @@ namespace TelegramQuiz
             using var reader = new StreamReader(fileName);
             var questions = deserializer.Deserialize<List<Question>>(reader);
 
-            Questions.AddRange(questions);
+            lock (_lock)
+            {
+                Questions.AddRange(questions);
+            }
         }
 
         public void ShuffleAnswers()
         {
             foreach (var question in Questions)
             {
-                question.ToHash();
                 question.Shuffle(question.Answers);
+                question.ToHash();
             }
         }
 
@@ -120,9 +124,13 @@ namespace TelegramQuiz
                 (str) => 
                 {
                     var file = PrepareFilename(str);
-                    /*InThread(()=>LoadFromFile(file));*/
-                    LoadFromFile(file);
+                    InThread(()=>LoadFromFile(file));
                 });
+
+            foreach (var thread in Threads)
+            {
+                thread.Join();
+            }
 
             ShuffleAnswers();
         }
