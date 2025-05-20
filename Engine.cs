@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TelegramQuiz.Database;
 using TelegramQuiz.Database.Entities;
 
@@ -11,6 +12,7 @@ namespace TelegramQuiz
         public FileWriter FileWriter { get; private set; }
         public QuizDbContext Context { get; private set; }
         public Statistics Statistics { get; private set; }
+        private ILogger<Engine> _logger;
         public string UserName { get; set; }
 
         public Func<long, string, string[], Task> SendQuestionAsync;
@@ -24,12 +26,14 @@ namespace TelegramQuiz
         public Engine(QuestionData questionData,
             FileWriter fileWriter,
             QuizDbContext context,
-            Statistics statistics)
+            Statistics statistics,
+            ILogger<Engine> logger)
         {
             QuestionData = questionData;
             FileWriter = fileWriter;
             Context = context;
             Statistics = statistics;
+            _logger = logger;
         }
 
         public async Task Run(long chatId)
@@ -64,6 +68,12 @@ namespace TelegramQuiz
 
         public async Task StopTest(long chatId)
         {
+            if (!isTest)
+            {
+                await SendMessageAsync!(chatId, $"Quiz не запущено");
+                return;
+            }
+
             isTest = false;
 
             await SendMessageAsync!(chatId, $"Quiz зупинено");
@@ -73,7 +83,10 @@ namespace TelegramQuiz
         public async Task CheckAsync(long chatId, string userAnswerLetter)
         {
             var userAnswer = QuestionData.Questions[questionIndex].FindAnswerByChar(userAnswerLetter);
-            
+
+            _logger.LogInformation("User Answer: {answer}, {Username} - {chatId}", QuestionData.Questions[questionIndex].FindAnswerByChar(userAnswerLetter), UserName, chatId);
+            _logger.LogInformation("Correct Answer: {answer}, {Username} - {chatId}", QuestionData.Questions[questionIndex].CorrectAnswer,  UserName, chatId);
+
             if (userAnswer == QuestionData.Questions[questionIndex].CorrectAnswer)
             {
                 await SendMessageAsync!(chatId, $"Вірно");
@@ -124,6 +137,7 @@ namespace TelegramQuiz
 
         private async Task EndQuiz(long chatId, bool isComplete)
         {
+            _logger.LogInformation($"End Quiz, {UserName} - {chatId}, {Statistics.PrintReport()}");
             await SendMessageAsync!(chatId, Statistics.PrintReport());
 
             FileWriter.FileName = UserName;

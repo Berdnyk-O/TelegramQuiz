@@ -1,10 +1,10 @@
 ﻿using Microsoft.Extensions.Logging;
+using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
+using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
-using Telegram.Bot.Types;
-using Telegram.Bot;
 
 namespace TelegramQuiz.Bot
 {
@@ -35,7 +35,7 @@ namespace TelegramQuiz.Bot
 
         public async Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, HandleErrorSource source, CancellationToken cancellationToken)
         {
-            _logger.LogInformation("HandleError: {Exception}", exception);
+            _logger.LogError("HandleError: {Exception}", exception);
             
             if (exception is RequestException)
                 await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
@@ -127,6 +127,7 @@ namespace TelegramQuiz.Bot
 
         async Task StartQuiz(Message msg)
         {
+            _logger.LogInformation("Start Quiz, {Username} - {ChatId}", msg.Chat.Username, msg.Chat.Id);
             _engine.UserName = msg.Chat.Username ??
                 $"{msg.Chat.FirstName} {msg.Chat.LastName}";
             await _engine.Run(msg.Chat.Id);
@@ -134,6 +135,7 @@ namespace TelegramQuiz.Bot
 
         async Task StopQuiz(Message msg)
         {
+            _logger.LogInformation("Stop Quiz, {Username} - {ChatId}", msg.Chat.Username, msg.Chat.Id);
             await _engine.StopTest(msg.Chat.Id);
         }
 
@@ -143,10 +145,11 @@ namespace TelegramQuiz.Bot
             {
                 await _bot.SendMessage(msg.Chat, "Помилка в команді");
             }
-                
+
             int number;
             bool success = Int32.TryParse(msg.Text.Split(' ')[1],out number);
-            
+            _logger.LogInformation("Get Question {number}, {Username} - {ChatId}", number, msg.Chat.Username, msg.Chat.Id);
+
             if (!success)
             {
                 await _bot.SendMessage(msg.Chat, "Невірно введений номер");
@@ -174,7 +177,6 @@ namespace TelegramQuiz.Bot
         private async Task OnCallbackQuery(CallbackQuery callbackQuery)
         {
             _logger.LogInformation("Received inline keyboard callback from: {CallbackQueryId}", callbackQuery.Id);
-
             await _engine.CheckAsync(callbackQuery.Message!.Chat.Id, callbackQuery.Data);
         }
 
