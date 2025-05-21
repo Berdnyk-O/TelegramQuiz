@@ -36,7 +36,6 @@
 
   <ItemGroup>
     <Folder Include="Answers\" />
-    <Folder Include="Json\" />
     <Folder Include="Logs\" />
   </ItemGroup>
 

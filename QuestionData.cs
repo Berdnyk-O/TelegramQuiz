@@ -1,18 +1,20 @@
-﻿using YamlDotNet.Serialization;
+﻿using System.Text.Json;
+using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
 namespace TelegramQuiz
 {
     public class QuestionData
     {
-        private const string QuestionsYmlDirPath = "D:/Projects/TelegramQuiz/Yml/questions.yaml";
-        private const string QuestionsJsonDirPath = "D:/Projects/TelegramQuiz/Json/questions.json";
+        private const string QuestionsYmlDirPath = "D:/Projects/TelegramQuiz/Yml";
+        private const string QuestionsJsonDirPath = "D:/Projects/TelegramQuiz/Json";
         private const string TestFileExtension = "*.yaml";
 
         public List<Question> Questions { get; set; }
         public List<Thread> Threads { get; set; }
 
         private readonly object _lock = new object();
+
         public QuestionData(Question[] questions)
         {
             Questions = questions.ToList();
@@ -38,12 +40,22 @@ namespace TelegramQuiz
             return questinsYaml;
         }
 
-        public bool SaveToYaml(string[] questinsYaml)
+        public bool SaveToYaml(string[] questionsYaml)
         {
-            string yamlContent = string.Join(Environment.NewLine, questinsYaml);
-            
-            File.WriteAllText(QuestionsYmlDirPath, yamlContent);
+            string yamlContent = string.Join(Environment.NewLine, questionsYaml);
+            string filePath = Path.Combine(QuestionsYmlDirPath, "questions.yaml");
 
+            Directory.CreateDirectory(QuestionsJsonDirPath);
+            File.WriteAllText(filePath, yamlContent);
+
+           /* var serializer = new SerializerBuilder()
+            .WithNamingConvention(CamelCaseNamingConvention.Instance)
+            .Build();
+            string filePath = Path.Combine(QuestionsYmlDirPath, "questions.yaml");
+
+            Directory.CreateDirectory(QuestionsJsonDirPath);
+            File.WriteAllText(filePath, serializer.Serialize(Questions));*/
+             
             return true;
         }
 
@@ -61,9 +73,11 @@ namespace TelegramQuiz
 
         public bool SaveToJson(string[] questinsJson)
         {
-            string yamlContent = string.Join(Environment.NewLine, questinsJson);
+            string jsonContent = "[" + string.Join(",", questinsJson) + "]";
+            string filePath = Path.Combine(QuestionsJsonDirPath, "questions.json");
 
-            File.WriteAllText(QuestionsJsonDirPath, yamlContent);
+            Directory.CreateDirectory(QuestionsJsonDirPath);
+            File.WriteAllText(filePath, jsonContent);
 
             return true;
         }
@@ -91,13 +105,33 @@ namespace TelegramQuiz
 
         public void LoadFromFile(string fileName)
         {
-            var deserializer = new DeserializerBuilder()
-                .WithNamingConvention(CamelCaseNamingConvention.Instance)
-                .IgnoreUnmatchedProperties()
-                .Build();
+            var extension = Path.GetExtension(fileName).ToLowerInvariant();
+
+            List<Question> questions;
 
             using var reader = new StreamReader(fileName);
-            var questions = deserializer.Deserialize<List<Question>>(reader);
+
+            if (extension == ".yaml" || extension == ".yml")
+            {
+                var deserializer = new DeserializerBuilder()
+                    .WithNamingConvention(CamelCaseNamingConvention.Instance)
+                    .IgnoreUnmatchedProperties()
+                    .Build();
+
+                questions = deserializer.Deserialize<List<Question>>(reader);
+            }
+            else if (extension == ".json")
+            {
+                var content = reader.ReadToEnd();
+                questions = JsonSerializer.Deserialize<List<Question>>(content, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                })!;
+            }
+            else
+            {
+                throw new NotSupportedException($"Формат файлу '{extension}' не підтримується.");
+            }
 
             lock (_lock)
             {
@@ -116,15 +150,20 @@ namespace TelegramQuiz
 
         public void LoadData()
         {
-            string baseDir = AppContext.BaseDirectory;
-            string projectRoot = Path.GetFullPath(Path.Combine(baseDir, @"..\..\..\Yml"));
+            string extension = TestFileExtension.Substring(2);
+            string projectRoot = QuestionsYmlDirPath;
+
+            if (extension == "json")
+            {
+                projectRoot = QuestionsJsonDirPath;
+            }
 
             EachFile(projectRoot,
                 TestFileExtension,
-                (str) => 
+                (str) =>
                 {
                     var file = PrepareFilename(str);
-                    InThread(()=>LoadFromFile(file));
+                    InThread(() => LoadFromFile(file));
                 });
 
             foreach (var thread in Threads)
